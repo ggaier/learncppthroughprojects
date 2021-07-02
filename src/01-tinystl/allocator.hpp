@@ -49,8 +49,44 @@ namespace mystl
         //1. 相比传统的C风格的类型转化, C++提供了四种类型操作符, 分别是
         //dynamic_cast, reinterpret_cast, static_cast, const_cast
         //2. operator new() 默认的allocation 函数. 这个函数只会申请内存, 但是不会调用类的构造器.
-        // :: 使用来告诉编译器使用全名namespace. 
+        // :: 使用来告诉编译器使用全名namespace.
+        //3 和new关键字的区别就是, new 还会调用类的构造器.
         return static_cast<T *>(::operator new(sizeof(T)));
+    }
+
+    template <class T>
+    T *allocator<T>::allocate(size_type n)
+    {
+        if (n == 0)
+        {
+            return nullptr;
+        }
+        //static_cast 没有运行时的类型检查, 可能会出现运行时的异常.
+        return static_cast<T *>(::operator new(n * sizeof(T)))
+    }
+
+    template <class T>
+    void allocator<T>::deallocate(T *ptr)
+    {
+        if (ptr == nullptr)
+            return;
+        //和 operator new 类似, 这个方法不会调用类的析构函数.
+        ::operator delete(ptr);
+    }
+
+    template <class T>
+    //如果是使用不到的参数, 可以注释掉, 或者省略掉参数名.
+    void allocator<T>::deallocate(T *ptr, size_type /*size*/)
+    {
+        if (ptr == nullptr)
+            return;
+        ::operator delete(ptr);
+    }
+
+    template<class T>
+    void allocator<T>::construct(T* ptr)
+    {
+        
     }
 
 }
