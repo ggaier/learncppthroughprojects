@@ -1,5 +1,12 @@
 {
     "files.associations": {
-        "new": "cpp"
+        "new": "cpp",
+        "type_traits": "cpp",
+        "cstddef": "cpp",
+        "__string": "cpp",
+        "ios": "cpp",
+        "iterator": "cpp",
+        "ctime": "cpp",
+        "stddef.h": "c"
     }
 }
