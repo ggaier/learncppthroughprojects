@@ -7,6 +7,7 @@
         "ios": "cpp",
         "iterator": "cpp",
         "ctime": "cpp",
-        "stddef.h": "c"
+        "stddef.h": "c",
+        "string.h": "c"
     }
 }
