@@ -112,9 +112,7 @@ char** lsh_split_line(char* line) {
   }
   // strtok spilit string into tokens.
   //依照给定的界定符, 分割匹配到的连续字符串.
-  printf("split line: %s\n", line);
   token = strtok(line, LSH_TOK_DELIM);
-  printf("split line2222 token: %s\n", token);
   while (token != NULL) {
     tokens[position] = token;
     position++;
@@ -128,7 +126,6 @@ char** lsh_split_line(char* line) {
       }
     }
     token = strtok(NULL, LSH_TOK_DELIM);
-    printf("token: %s\n", token);
   }
   tokens[position] = NULL;
   return tokens;
@@ -141,13 +138,11 @@ char** lsh_split_line(char* line) {
 int (*builtin_func[])(char**) = {&lsh_cd, &lsh_help, &lsh_exit};
 
 int lsh_cd(char** args) {
-  printf("lsh cd");
   if (args[1] == NULL) {
     fprintf(stderr, "lsh: expected argument to \"cd\"n");
   } else {
     // chdir: change working directory., 一个posix 接口, 如果切换当前目录成功,
     //返回值为0.
-    printf("cd path: %s", args[1]);
     if (chdir(args[1]) != 0) {
       //打印错误日志.
       perror("lsh");
@@ -175,7 +170,6 @@ int lsh_exit(char** args) {
 
 //启动shell.
 int lsh_launch(char** args) {
-  printf("lsh launch\n");
   pid_t pid;
   int status;
 
@@ -218,11 +212,9 @@ int lsh_execute(char** args) {
   if (args[0] == NULL) {
     return 1;
   }
-  printf("lsh execute111: %s\n", args[0]);
 
   for (i = 0; i < lsh_num_builtins(); i++) {
     //比较两个字符串. 如果相等, 返回0, 如果不等, 返回0或者大于0, 比较的是ASCII码
-    printf("lsh execute222: %s\n", builtin_str[i]);
     if (strcmp(args[0], builtin_str[i]) == 0) {
       return builtin_func[i](args);
     }
