@@ -8,6 +8,17 @@
         "iterator": "cpp",
         "ctime": "cpp",
         "stddef.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "__locale": "c",
+        "atomic": "c",
+        "cstdlib": "c",
+        "locale": "c",
+        "ostream": "c",
+        "typeinfo": "c",
+        "algorithm": "c",
+        "complex": "c",
+        "stdlib.h": "c",
+        "string": "c",
+        "string_view": "c"
     }
 }
