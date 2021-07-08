@@ -162,6 +162,7 @@ int lsh_help(char** args) {
     printf("  %s\n", builtin_str[i]);
   }
   printf("Use the man command for information on other programs.\n");
+  return 1;
 }
 
 int lsh_exit(char** args) {
