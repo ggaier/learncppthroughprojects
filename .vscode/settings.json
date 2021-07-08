@@ -19,6 +19,8 @@
         "complex": "c",
         "stdlib.h": "c",
         "string": "c",
-        "string_view": "c"
+        "string_view": "c",
+        "termios.h": "c",
+        "errno.h": "c"
     }
 }
