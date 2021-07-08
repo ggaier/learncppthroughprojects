@@ -5,6 +5,12 @@
 #include <termios.h>
 #include <unistd.h>
 
+/*** defines ***/
+// Holding down Control key while pressing another key zeroed the leftmost two
+// bits of the seven bits in the generated ASCII character.
+//所以才和0x1f(00011111)相与, 用来表示ctrl+按键的效果, 同时也包含在了ASCII的前三十二个控制字符中.
+#define CTRL_KEY(k) ((k)&0x1f)
+
 /*** data ***/
 struct termios orig_termios;
 
@@ -77,7 +83,8 @@ int main(int argc, char const* argv[]) {
     } else {
       printf("%d ('%c')\r\n", c, c);
     }
-    if (c == 'q')
+    //这里就用来表示ctrl+q.
+    if (c == CTRL_KEY('q'))
       break;
   }
   return 0;
