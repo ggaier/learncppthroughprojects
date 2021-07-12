@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 /*** defines ***/
+#define KILO_VERSION "0.0.1"
 /*
 Holding down Control key while pressing another key zeroed the leftmost two
 bits of the seven bits in the generated ASCII character.
@@ -133,11 +134,11 @@ int getWindowSize(int* rows, int* columns) {
 struct abuf {
   char* b;
   int len;
-}
+};
 #define ABUF_INIT \
   { NULL, 0 }
 
-void abAppend(struct abuf *ab, const char *s, int len){
+void abAppend(struct abuf* ab, const char* s, int len) {
   char* new = realloc(ab->b, ab->len + len);
   if (new == NULL)
     return;
@@ -157,8 +158,30 @@ void abFree(struct abuf* ab) {
 void editorDrawRows(struct abuf* ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    abAppend(ab, "~", 1);
+    //在屏幕的1/3处, 绘制一个欢迎信息.
+    if (y == E.screenrows / 3) {
+      char welcome[80];
+      //组合一个格式化的字符串, 存储到参数welcome中, 而不是打印到标准输出.
+      int welcomelen = snprintf(welcome, sizeof(welcome),
+                                "Kilo editor -- version %s", KILO_VERSION);
+      if (welcomelen > E.screencols)
+        welcomelen = E.screencols;
+      int padding = (E.screencols - welcomelen) / 2;
+      if (padding) {
+        abAppend(ab, "~", 1);
+        padding--;
+      }
+      while (padding--) {
+        abAppend(ab, " ", 1);
+      }
+      abAppend(ab, welcome, welcomelen);
+    } else {
+      abAppend(ab, "~", 1);
+    }
 
+    //清除一行, 这样的话, 可以移除清空屏幕的命令了.
+    //这样的话, 会更加的高效.
+    abAppend(ab, "\x1b[K", 3);
     if (y < E.screenrows - 1) {
       abAppend(ab, "\r\n", 2);
     }
@@ -167,6 +190,7 @@ void editorDrawRows(struct abuf* ab) {
 
 void editorRefreshScreen() {
   struct abuf ab = ABUF_INIT;
+  abAppend(&ab, "\x1b[?25l", 6);
   //写四个字节的数据到STDOUT_FILENO, 也就是标准输出
   //四个字节分别是"\x1b"表示的数字27, 也就是Escapse键
   //剩下的三个字节分别是[2J.
@@ -175,7 +199,7 @@ void editorRefreshScreen() {
   // 2J: 表示的是清空全部屏幕.
   // https://vt100.net/docs/vt100-ug/chapter3.html#ED
   //这篇文章使用了VT100的控制序列. ncurses库是另外一个更好的选择.
-  abAppend(&ab, "\x1b[2J", 4);
+  // abAppend(&ab, "\x1b[2J", 4);
 
   //清空屏幕后, 光标位置移动到了屏幕的下方
   //这个方法把光标重新放置在左上角.
@@ -188,7 +212,10 @@ void editorRefreshScreen() {
 
   //绘制完行起始符号之后, 重新把cursor放置到开始的位置.
   abAppend(&ab, "\x1b[H", 3);
-  
+
+  //这个和上边的l命令是用了隐藏和显示光标的. 但是终端不一定会支持这个功能.
+  abAppend(&ab, "\x1b[?25h", 6);
+
   //把数组内容输出到屏幕上.
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
