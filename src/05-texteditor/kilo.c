@@ -17,8 +17,22 @@ bits of the seven bits in the generated ASCII character.
 */
 #define CTRL_KEY(k) ((k)&0x1f)
 
+enum editorKey {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  PAGE_UP,
+  PAGE_DOWN,
+  HOME_KEY,
+  END_KEY,
+  DEL_KEY
+};
+
 /*** data ***/
 struct editorConfig {
+  int cx, cy;
+
   int screenrows;
   int screencols;
   struct termios orig_termios;
@@ -27,7 +41,7 @@ struct editorConfig {
 struct editorConfig E;
 
 /*** terminal ***/
-void die(const char* s) {
+void die(const char *s) {
   //退出编辑器的时候, 同时清空屏幕
   write(STDOUT_FILENO, "\x1b[2J", 4);
   write(STDOUT_FILENO, "\x1b[H", 3);
@@ -43,8 +57,7 @@ void disableRawMode() {
 
 void enableRawMode() {
   //读取和设置terminal的attributes
-  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1)
-    die("tcgetattr");
+  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcgetattr");
   //当应用进程被结束的时候, 制动会执行方法指针所指向的函数.
   atexit(disableRawMode);
 
@@ -72,11 +85,10 @@ void enableRawMode() {
   // VTIME: 非canonical 读取的情况下超时时间, 单位为1/10s.
   raw.c_cc[VTIME] = 1;
   // tcsetattr: 第二个参数表示的是新的attr生效的时机.
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
-    die("tcsetattr");
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
-char editorReadKey() {
+int editorReadKey() {
   int nread;
   char c;
   // read(): posix接口, 从文件描述符中读出指定字节的数据到缓存中
@@ -86,40 +98,90 @@ char editorReadKey() {
     //判断EAGAIN错误的原因: 在cygwin运行环境中, read()方法超时, 会返回-1,
     //并把errno 设置为EAGAIN. 所以这里不把EAGAIN当成是错误.
     // errno: 上次的错误代码.
-    if (nread == 1 && errno != EAGAIN)
-      die("read");
+    if (nread == 1 && errno != EAGAIN) die("read");
   }
+  if (c == '\x1b') {
+    char seq[3];
+    //读取两个字节到seq中.
+    if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
+    if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+    // write(STDOUT_FILENO, str, strlen(str));
+    //方向键会产生escape队列, 格式分别是'[A','[B','[C','[D'
+    //按照左上右下的顺序分别是: D, A, C, B
+    if (seq[0] == '[') {
+      if (seq[1] >= '0' && seq[1] <= '9') {
+        if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+        if (seq[2] == '~') {
+          switch (seq[1]) {
+            case '1':
+              return HOME_KEY;
+            case '3':
+              return DEL_KEY;
+              break;
+            case '4':
+              return END_KEY;
+            case '5':
+              return PAGE_DOWN;
+            case '6':
+              return PAGE_UP;
+            case '7':
+              return HOME_KEY;
+            case '8':
+              return END_KEY;
+          }
+        }
+      } else {
+        switch (seq[1]) {
+          case 'A':
+            return ARROW_UP;
+          case 'B':
+            return ARROW_DOWN;
+          case 'C':
+            return ARROW_RIGHT;
+          case 'D':
+            return ARROW_LEFT;
+          case 'H':
+            return HOME_KEY;
+          case 'F':
+            return END_KEY;
+        }
+      }
+    } else if (seq[0] == '0') {
+      switch (seq[1]) {
+        case 'H':
+          return HOME_KEY;
+        case 'F':
+          return END_KEY;
+      }
+    }
+    return '\x1b';
+  }
+
   return c;
 }
 
-int getCursorPosition(int* rows, int* cols) {
+int getCursorPosition(int *rows, int *cols) {
   char buf[32];
   unsigned int i = 0;
-  if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4)
-    return -1;
+  if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
   while (i < sizeof(buf) - 1) {
-    if (read(STDIN_FILENO, &buf[i], 1) != 1)
-      break;
-    if (buf[i] == 'R')
-      break;
+    if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+    if (buf[i] == 'R') break;
     i++;
   }
   buf[i] = '\0';
-  if (buf[0] != '\x1b' || buf[1] != '[')
-    return -1;
+  if (buf[0] != '\x1b' || buf[1] != '[') return -1;
   //从string中读取格式化的数据, 并把它们存储在提供的参数中.
-  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2)
-    return -1;
+  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
   return 0;
 }
 
-int getWindowSize(int* rows, int* columns) {
+int getWindowSize(int *rows, int *columns) {
   struct winsize ws;
   // ioctl 用来操作某些文件的底层设备参数,
   // 尤其是比如终端(terminals)可以被ioctl()请求控制.
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-    if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12)
-      return -1;
+    if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
     //这里是一个fallback function, 当ioctl获取失败的时候,
     //使用光标位置的方式来计算总共有多少行列
     return getCursorPosition(rows, columns);
@@ -132,16 +194,15 @@ int getWindowSize(int* rows, int* columns) {
 
 /*** append buffer ***/
 struct abuf {
-  char* b;
+  char *b;
   int len;
 };
 #define ABUF_INIT \
   { NULL, 0 }
 
-void abAppend(struct abuf* ab, const char* s, int len) {
-  char* new = realloc(ab->b, ab->len + len);
-  if (new == NULL)
-    return;
+void abAppend(struct abuf *ab, const char *s, int len) {
+  char *new = realloc(ab->b, ab->len + len);
+  if (new == NULL) return;
   // string.h memcpy(str1, str2, n): 把str2中的数据复制到str1中,
   // 被复制的字节数为n
   //该方法把字符串s复制到new 字符串数组的末尾.
@@ -150,12 +211,10 @@ void abAppend(struct abuf* ab, const char* s, int len) {
   ab->len += len;
 }
 
-void abFree(struct abuf* ab) {
-  free(ab->b);
-}
+void abFree(struct abuf *ab) { free(ab->b); }
 
 /*** output ***/
-void editorDrawRows(struct abuf* ab) {
+void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
     //在屏幕的1/3处, 绘制一个欢迎信息.
@@ -164,8 +223,7 @@ void editorDrawRows(struct abuf* ab) {
       //组合一个格式化的字符串, 存储到参数welcome中, 而不是打印到标准输出.
       int welcomelen = snprintf(welcome, sizeof(welcome),
                                 "Kilo editor -- version %s", KILO_VERSION);
-      if (welcomelen > E.screencols)
-        welcomelen = E.screencols;
+      if (welcomelen > E.screencols) welcomelen = E.screencols;
       int padding = (E.screencols - welcomelen) / 2;
       if (padding) {
         abAppend(ab, "~", 1);
@@ -210,8 +268,11 @@ void editorRefreshScreen() {
 
   editorDrawRows(&ab);
 
-  //绘制完行起始符号之后, 重新把cursor放置到开始的位置.
-  abAppend(&ab, "\x1b[H", 3);
+  //移动cursor到指定的cx和cy位置.
+  char buf[32];
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  //返回字符串的长度.
+  abAppend(&ab, buf, strlen(buf));
 
   //这个和上边的l命令是用了隐藏和显示光标的. 但是终端不一定会支持这个功能.
   abAppend(&ab, "\x1b[?25h", 6);
@@ -222,13 +283,59 @@ void editorRefreshScreen() {
 }
 
 /*** input ***/
-void editProcessKeypress() {
-  char c = editorReadKey();
+void editorMoveCursor(int key) {
+  switch (key) {
+    case ARROW_LEFT:
+      if (E.cx != 0) {
+        E.cx--;
+      }
+      break;
+    case ARROW_RIGHT:
+      if (E.cx != E.screencols - 1) {
+        E.cx++;
+      }
+      break;
+    case ARROW_UP:
+      if (E.cy != 0) {
+        E.cy--;
+      }
+      break;
+    case ARROW_DOWN:
+      if (E.cy != E.screenrows) {
+        E.cy++;
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void editorProcessKeypress() {
+  int c = editorReadKey();
   switch (c) {
     case CTRL_KEY('q'):
       write(STDOUT_FILENO, "\x1b[2J", 4);
       write(STDOUT_FILENO, "\x1b[H", 3);
       exit(EXIT_SUCCESS);
+      break;
+    case HOME_KEY:
+      E.cx = 0;
+      break;
+    case END_KEY:
+      E.cy = E.screencols - 1;
+      break;
+    case PAGE_UP:
+    case PAGE_DOWN: {
+      int times = E.screenrows;
+      while (times--) {
+        editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+      }
+    } break;
+    case ARROW_LEFT:
+    case ARROW_UP:
+    case ARROW_RIGHT:
+    case ARROW_DOWN:
+      editorMoveCursor(c);
       break;
     default:
       break;
@@ -237,11 +344,12 @@ void editProcessKeypress() {
 
 /*** init ***/
 void initEditor() {
-  if (getWindowSize(&E.screenrows, &E.screencols) == -1)
-    die("getWindowSize");
+  E.cx = 0;
+  E.cy = 0;
+  if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
 
-int main(int argc, char const* argv[]) {
+int main(int argc, char const *argv[]) {
   // terminal有两种不同的模式, 一种是cooked mode, 输入数据会被预先处理,
   // 然后再统一给应用程序. 也就是一次性给一行; 另外一种是raw mode,
   //用户输入什么数据, terminal就给应用什么样的数据.
@@ -251,7 +359,7 @@ int main(int argc, char const* argv[]) {
 
   while (1) {
     editorRefreshScreen();
-    editProcessKeypress();
+    editorProcessKeypress();
   }
   return 0;
 }
