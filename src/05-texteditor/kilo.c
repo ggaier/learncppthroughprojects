@@ -1,14 +1,21 @@
+// feature test macros: 特性测试宏. 用来控制编译的程序所包含的特性.
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
 /*** defines ***/
 #define KILO_VERSION "0.0.1"
+#define KILO_TAB_STOP 8
 /*
 Holding down Control key while pressing another key zeroed the leftmost two
 bits of the seven bits in the generated ASCII character.
@@ -30,11 +37,26 @@ enum editorKey {
 };
 
 /*** data ***/
+typedef struct erow {
+  int size;
+  // render中字符串的长度.
+  int rsize;
+  char *chars;
+  //实际上要绘制的一行文字.
+  char *render;
+} erow;
+
 struct editorConfig {
   int cx, cy;
-
+  int rx;
+  int rowoff;
+  int coloff;
   int screenrows;
   int screencols;
+  //总共有多少行.
+  int numrows;
+  //多行的字符串.
+  erow *row;
   struct termios orig_termios;
 };
 
@@ -192,6 +214,89 @@ int getWindowSize(int *rows, int *columns) {
   }
 }
 
+/*** row operations ***/
+int editorRowCxToRx(erow *row, int cx) {
+  int rx = 0;
+  int j;
+  for (j = 0; j < cx; j++) {
+    if (row->chars[j] == '\t') {
+      rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+    }
+    rx++;
+  }
+  return rx;
+}
+
+void editorUpdateRow(erow *row) {
+  int tabs = 0;
+  int j;
+  for (j = 0; j < row->rsize; j++) {
+    if (row->chars[j] == '\t') tabs++;
+  }
+  free(row->render);
+  //这里tab*7,是因为在row->size中计算字符串长度时, 已经把'\t'
+  //算了一个字节的大小了.
+  row->render = malloc(row->size + tabs * (KILO_TAB_STOP - 1) + 1);
+
+  //把要绘制的文字拷贝给render.
+  int idx = 0;
+  for (j = 0; j < row->size; j++) {
+    if (row->chars[j] == '\t') {
+      row->render[idx++] = ' ';
+      //这是因为一个tab采用8个空格渲染.
+      while (idx % KILO_TAB_STOP != 0) row->render[idx++] = ' ';
+    } else {
+      row->render[idx++] = row->chars[j];
+    }
+  }
+  row->render[idx] = '\0';
+  row->rsize = idx;
+}
+
+void editorAppendRow(char *s, size_t len) {
+  //由于要新增一行字符串, 所以要把E.row数组扩大一个元素.
+  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+
+  //把新增的字符串加入到数组的末尾.
+  int at = E.numrows;
+  E.row[at].size = len;
+  //被数组中最后一个字符串申请内存
+  E.row[at].chars = malloc(len + 1);
+  //然后把新增字符串拷贝到刚才申请的内存中.
+  memcpy(E.row[at].chars, s, len);
+  //添加结束符号.
+  E.row[at].chars[len] = '\0';
+
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  editorUpdateRow(&E.row[at]);
+  E.numrows++;
+}
+
+/*** file i/o ***/
+
+void editorOpen(char *filename) {
+  FILE *fp = fopen(filename, "r");
+  if (!fp) die("fopen");
+
+  char *line = NULL;
+  size_t linecap = 0;
+  ssize_t linelen;
+  // getline(char* lineptr, size_t* n, FILE * stream)
+  //从指定的stream中读取一行数据, 并存储在*lineptr中, 这是一个POSIX的接口.
+  //返回读取到的字节数. 把*lineptr 设置为空指针, n设置为0, 也是允许的,
+  //会使用推荐的 方式读取这个文件.
+  //这个方法在没有兼容POSIX接口的设备上, 会出现问题.
+  while ((linelen = getline(&line, &linecap, fp)) != -1) {
+    while (linelen > 0 &&
+           (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
+      linelen--;
+    editorAppendRow(line, linelen);
+  }
+  free(line);
+  fclose(fp);
+}
+
 /*** append buffer ***/
 struct abuf {
   char *b;
@@ -214,27 +319,63 @@ void abAppend(struct abuf *ab, const char *s, int len) {
 void abFree(struct abuf *ab) { free(ab->b); }
 
 /*** output ***/
+void editorScroll() {
+  E.rx = 0;
+  if (E.cy < E.numrows) {
+    E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
+  }
+  // cy是光标的行数. 这里在修正rowoff
+  //检查光标是否在window上方, 如果是, 就减小rowoff
+  if (E.cy < E.rowoff) {
+    E.rowoff = E.cy;
+  }
+
+  //检查光标是否在window下方, 如果是就增大rowoff.
+  if (E.cy >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cy - E.screenrows + 1;
+  }
+
+  if (E.rx < E.coloff) {
+    E.coloff = E.rx;
+  }
+  if (E.rx >= E.coloff + E.screencols) {
+    E.coloff = E.rx - E.screencols - 1;
+  }
+}
+
+void drawWelcomeMessage(struct abuf *ab) {
+  char welcome[80];
+  //组合一个格式化的字符串, 存储到参数welcome中, 而不是打印到标准输出.
+  int welcomelen = snprintf(welcome, sizeof(welcome),
+                            "Kilo editor -- version %s", KILO_VERSION);
+  if (welcomelen > E.screencols) welcomelen = E.screencols;
+  int padding = (E.screencols - welcomelen) / 2;
+  if (padding) {
+    abAppend(ab, "~", 1);
+    padding--;
+  }
+  while (padding--) {
+    abAppend(ab, " ", 1);
+  }
+  abAppend(ab, welcome, welcomelen);
+}
+
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    //在屏幕的1/3处, 绘制一个欢迎信息.
-    if (y == E.screenrows / 3) {
-      char welcome[80];
-      //组合一个格式化的字符串, 存储到参数welcome中, 而不是打印到标准输出.
-      int welcomelen = snprintf(welcome, sizeof(welcome),
-                                "Kilo editor -- version %s", KILO_VERSION);
-      if (welcomelen > E.screencols) welcomelen = E.screencols;
-      int padding = (E.screencols - welcomelen) / 2;
-      if (padding) {
+    int filerow = y + E.rowoff;
+    if (filerow >= E.numrows) {
+      //在屏幕的1/3处, 绘制一个欢迎信息.
+      if (E.numrows == 0 && y == E.screenrows / 3) {
+        drawWelcomeMessage(ab);
+      } else {
         abAppend(ab, "~", 1);
-        padding--;
       }
-      while (padding--) {
-        abAppend(ab, " ", 1);
-      }
-      abAppend(ab, welcome, welcomelen);
     } else {
-      abAppend(ab, "~", 1);
+      int len = E.row[filerow].rsize - E.coloff;
+      if (len < 0) len = 0;
+      if (len > E.screencols) len = E.screencols;
+      abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
 
     //清除一行, 这样的话, 可以移除清空屏幕的命令了.
@@ -247,6 +388,8 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorRefreshScreen() {
+  editorScroll();
+
   struct abuf ab = ABUF_INIT;
   abAppend(&ab, "\x1b[?25l", 6);
   //写四个字节的数据到STDOUT_FILENO, 也就是标准输出
@@ -270,7 +413,8 @@ void editorRefreshScreen() {
 
   //移动cursor到指定的cx和cy位置.
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+           (E.rx - E.coloff) + 1);
   //返回字符串的长度.
   abAppend(&ab, buf, strlen(buf));
 
@@ -284,15 +428,25 @@ void editorRefreshScreen() {
 
 /*** input ***/
 void editorMoveCursor(int key) {
+  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
   switch (key) {
     case ARROW_LEFT:
       if (E.cx != 0) {
         E.cx--;
+      } else if (E.coloff > 0) {
+        //如果在行头, 继续左移, 会移动到上一行的末尾.
+        E.cy--;
+        E.cx = E.row[E.cy].size;
       }
       break;
     case ARROW_RIGHT:
-      if (E.cx != E.screencols - 1) {
+      //限制光标移动超出一行的末尾.
+      if (row && E.cx < row->size) {
         E.cx++;
+      } else if (E.cx == row->size) {
+        E.cy++;
+        E.cx = 0;
       }
       break;
     case ARROW_UP:
@@ -301,12 +455,15 @@ void editorMoveCursor(int key) {
       }
       break;
     case ARROW_DOWN:
-      if (E.cy != E.screenrows) {
+      if (E.cy < E.numrows) {
         E.cy++;
       }
       break;
-    default:
-      break;
+  }
+  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  int rowlen = row ? row->size : 0;
+  if (E.cx > rowlen) {
+    E.cx = rowlen;
   }
 }
 
@@ -322,10 +479,19 @@ void editorProcessKeypress() {
       E.cx = 0;
       break;
     case END_KEY:
-      E.cy = E.screencols - 1;
+      if (E.cy < E.numrows) {
+        E.cx = E.row[E.cy].size;
+      }
       break;
     case PAGE_UP:
     case PAGE_DOWN: {
+      //使用PAGE_UP, PAGE_DOWN翻屏;
+      if (c == PAGE_UP) {
+        E.cy = E.rowoff;
+      } else if (c == PAGE_DOWN) {
+        E.cy = E.rowoff + E.screenrows - 1;
+        if (E.cy > E.numrows) E.cy = E.numrows;
+      }
       int times = E.screenrows;
       while (times--) {
         editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -346,6 +512,11 @@ void editorProcessKeypress() {
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
+  E.rx = 0;
+  E.numrows = 0;
+  E.row = NULL;
+  E.rowoff = 0;
+  E.coloff = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
 
@@ -356,6 +527,11 @@ int main(int argc, char const *argv[]) {
   //所以才需要开启Raw mode.
   enableRawMode();
   initEditor();
+  // main方法解释: argc, argument count, 表示的是argc表示的是传递给程序的参数
+  // argv是后边的实际参数. 其中第一个参数是程序本身.
+  if (argc >= 2) {
+    editorOpen(argv[1]);
+  }
 
   while (1) {
     editorRefreshScreen();
