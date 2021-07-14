@@ -278,6 +278,28 @@ void editorAppendRow(char *s, size_t len) {
   E.numrows++;
 }
 
+void editorRowInsertChar(erow *row, int at, int c) {
+  if (at < 0 || at > row->size) at = row->size;
+  row->chars = realloc(row->chars, row->size + 2);
+  //从src中拷贝指定数量的字符串到dst
+  //之所以选择memmove, 而不是memcpy, 是因为memmove
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+  row->size++;
+  //然后在at位置插入一个字符.
+  row->chars[at] = c;
+  editorUpdateRow(row);
+}
+
+/*** editor operations ***/
+void editorInsertChar(int c) {
+  if (E.cy == E.numrows) {
+    //新增一行长度为0字符串
+    editorAppendRow("", 0);
+  }
+  editorRowInsertChar(&E.row[E.cy], E.cx, c);
+  E.cx++;
+}
+
 /*** file i/o ***/
 
 void editorOpen(char *filename) {
@@ -561,6 +583,7 @@ void editorProcessKeypress() {
       editorMoveCursor(c);
       break;
     default:
+      editorInsertChar(c);
       break;
   }
 }
