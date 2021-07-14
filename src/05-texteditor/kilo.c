@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -418,6 +419,15 @@ void editorDrawStatusBar(struct abuf *ab) {
   }
 
   abAppend(ab, "\x1b[m", 3);
+  abAppend(ab, "\r\n", 2);
+}
+
+void editorDrawMessageBar(struct abuf *ab) {
+  abAppend(ab, "\x1b[K", 3);
+  int msglen = strlen(E.statusmsg);
+  if (msglen > E.screencols) msglen = E.screencols;
+  if (msglen && time(NULL) - E.statusmsg_time < 5)
+    abAppend(ab, E.statusmsg, msglen);
 }
 
 void editorRefreshScreen() {
@@ -444,6 +454,7 @@ void editorRefreshScreen() {
 
   editorDrawRows(&ab);
   editorDrawStatusBar(&ab);
+  editorDrawMessageBar(&ab);
 
   //移动cursor到指定的cx和cy位置.
   char buf[32];
@@ -458,6 +469,18 @@ void editorRefreshScreen() {
   //把数组内容输出到屏幕上.
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+  //用来获取一个方法的额外的参数.
+  // va: variadic
+  va_list ap;
+  va_start(ap, fmt);
+  //从vlist中加载数据, 并转化成之身穿, 并写入到对应的fmt位置中.
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  //获取当前时间
+  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -556,8 +579,8 @@ void initEditor() {
   E.statusmsg_time = 0;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
-  //绘制每一行文字的时候, 留下最后一行用来显示statusbar.
-  E.screenrows -= 1;
+  //绘制每一行文字的时候, 留下最后两行用来显示statusbar.
+  E.screenrows -= 2;
 }
 
 int main(int argc, char const *argv[]) {
@@ -572,6 +595,7 @@ int main(int argc, char const *argv[]) {
   if (argc >= 2) {
     editorOpen(argv[1]);
   }
+  editorSetStatusMessage("HELP: Ctrl-Q = quit");
 
   while (1) {
     editorRefreshScreen();
