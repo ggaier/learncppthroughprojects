@@ -11,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /*** defines ***/
@@ -57,6 +58,9 @@ struct editorConfig {
   int numrows;
   //多行的字符串.
   erow *row;
+  char *filename;
+  char statusmsg[80];
+  time_t statusmsg_time;
   struct termios orig_termios;
 };
 
@@ -276,6 +280,10 @@ void editorAppendRow(char *s, size_t len) {
 /*** file i/o ***/
 
 void editorOpen(char *filename) {
+  free(E.filename);
+  // strdup(const char* s): 复制一份字符串, 并返回指针.
+  E.filename = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
 
@@ -381,10 +389,35 @@ void editorDrawRows(struct abuf *ab) {
     //清除一行, 这样的话, 可以移除清空屏幕的命令了.
     //这样的话, 会更加的高效.
     abAppend(ab, "\x1b[K", 3);
-    if (y < E.screenrows - 1) {
-      abAppend(ab, "\r\n", 2);
+    abAppend(ab, "\r\n", 2);
+  }
+}
+
+void editorDrawStatusBar(struct abuf *ab) {
+  // m命令能够让打印出的文字带有各种属性, 比如加粗(1), 下划线(4), 闪烁(5),
+  // 反转色(7)
+  abAppend(ab, "\x1b[7m", 4);
+
+  char status[80], rstatus[80];
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+                     E.filename ? E.filename : "[No Name]", E.numrows);
+  //当前行数的格式化字符串.
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  if (len > E.screencols) len = E.screencols;
+  abAppend(ab, status, len);
+
+  while (len < E.screencols) {
+    //把当前行状态至于屏幕最右侧
+    if (E.screencols - len == rlen) {
+      abAppend(ab, rstatus, rlen);
+      break;
+    } else {
+      abAppend(ab, " ", 1);
+      len++;
     }
   }
+
+  abAppend(ab, "\x1b[m", 3);
 }
 
 void editorRefreshScreen() {
@@ -410,6 +443,7 @@ void editorRefreshScreen() {
   abAppend(&ab, "\x1b[H", 3);
 
   editorDrawRows(&ab);
+  editorDrawStatusBar(&ab);
 
   //移动cursor到指定的cx和cy位置.
   char buf[32];
@@ -517,7 +551,13 @@ void initEditor() {
   E.row = NULL;
   E.rowoff = 0;
   E.coloff = 0;
+  E.filename = NULL;
+  E.statusmsg[0] = '\0';
+  E.statusmsg_time = 0;
+
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+  //绘制每一行文字的时候, 留下最后一行用来显示statusbar.
+  E.screenrows -= 1;
 }
 
 int main(int argc, char const *argv[]) {
