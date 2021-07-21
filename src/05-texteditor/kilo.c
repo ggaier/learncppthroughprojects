@@ -19,6 +19,7 @@
 /*** defines ***/
 #define KILO_VERSION "0.0.1"
 #define KILO_TAB_STOP 8
+#define KILO_QUIT_TIMES 3
 /*
 Holding down Control key while pressing another key zeroed the leftmost two
 bits of the seven bits in the generated ASCII character.
@@ -61,6 +62,7 @@ struct editorConfig {
   int numrows;
   //多行的字符串.
   erow *row;
+  int dirty;
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
@@ -70,7 +72,7 @@ struct editorConfig {
 struct editorConfig E;
 
 /*** prototypes ***/
-//variadic funtion, 可变参数方法, va_start, va_arg, va_end, 来获取可变参数
+// variadic funtion, 可变参数方法, va_start, va_arg, va_end, 来获取可变参数
 void editorSetStatusMessage(const char *fmt, ...);
 
 /*** terminal ***/
@@ -282,6 +284,7 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].render = NULL;
   editorUpdateRow(&E.row[at]);
   E.numrows++;
+  E.dirty++;
 }
 
 void editorRowInsertChar(erow *row, int at, int c) {
@@ -304,6 +307,7 @@ void editorInsertChar(int c) {
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
+  E.dirty++;
 }
 
 /*** file i/o ***/
@@ -352,6 +356,7 @@ void editorOpen(char *filename) {
   }
   free(line);
   fclose(fp);
+  E.dirty = 0;
 }
 
 void editorSave() {
@@ -365,6 +370,7 @@ void editorSave() {
       if (write(fd, buf, len) == len) {
         close(fd);
         free(buf);
+        E.dirty = 0;
         editorSetStatusMessage("%d bytes written to disk", len);
         return;
       }
@@ -469,8 +475,9 @@ void editorDrawStatusBar(struct abuf *ab) {
   abAppend(ab, "\x1b[7m", 4);
 
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-                     E.filename ? E.filename : "[No Name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+                     E.filename ? E.filename : "[No Name]", E.numrows,
+                     E.dirty ? "(modified)" : "");
   //当前行数的格式化字符串.
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
   if (len > E.screencols) len = E.screencols;
@@ -594,12 +601,22 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress() {
+  static int quit_times = KILO_QUIT_TIMES;
+
   int c = editorReadKey();
   switch (c) {
     case '\r':
       /* TODO */
       break;
     case CTRL_KEY('q'):
+      if (E.dirty && quit_times > 0) {
+        editorSetStatusMessage(
+            "WARNING!!! File has unsaved changes. Press Ctrl-q %d more times "
+            "to quit",
+            quit_times);
+        quit_times--;
+        return;
+      }
       write(STDOUT_FILENO, "\x1b[2J", 4);
       write(STDOUT_FILENO, "\x1b[H", 3);
       exit(EXIT_SUCCESS);
@@ -648,6 +665,7 @@ void editorProcessKeypress() {
       editorInsertChar(c);
       break;
   }
+  quit_times = KILO_QUIT_TIMES;
 }
 
 /*** init ***/
@@ -657,6 +675,7 @@ void initEditor() {
   E.rx = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.dirty = 0;
   E.rowoff = 0;
   E.coloff = 0;
   E.filename = NULL;
