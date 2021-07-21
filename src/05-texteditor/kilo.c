@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +68,10 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+/*** prototypes ***/
+//variadic funtion, 可变参数方法, va_start, va_arg, va_end, 来获取可变参数
+void editorSetStatusMessage(const char *fmt, ...);
 
 /*** terminal ***/
 void die(const char *s) {
@@ -349,6 +354,27 @@ void editorOpen(char *filename) {
   fclose(fp);
 }
 
+void editorSave() {
+  if (E.filename == NULL) return;
+  int len;
+  char *buf = editorRowsToString(&len);
+  // POSIX方法.
+  int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+  if (fd != -1) {
+    if (ftruncate(fd, len) != -1) {
+      if (write(fd, buf, len) == len) {
+        close(fd);
+        free(buf);
+        editorSetStatusMessage("%d bytes written to disk", len);
+        return;
+      }
+    }
+    close(fd);
+  }
+  free(buf);
+  editorSetStatusMessage("Can't save I/O error: %s", strerror(errno));
+}
+
 /*** append buffer ***/
 struct abuf {
   char *b;
@@ -578,6 +604,9 @@ void editorProcessKeypress() {
       write(STDOUT_FILENO, "\x1b[H", 3);
       exit(EXIT_SUCCESS);
       break;
+    case CTRL_KEY('s'):
+      editorSave();
+      break;
     case HOME_KEY:
       E.cx = 0;
       break;
@@ -651,7 +680,7 @@ int main(int argc, char const *argv[]) {
   if (argc >= 2) {
     editorOpen(argv[1]);
   }
-  editorSetStatusMessage("HELP: Ctrl-Q = quit");
+  editorSetStatusMessage("HELP: Ctrl-s = save | Ctrl-Q = quit");
 
   while (1) {
     editorRefreshScreen();
