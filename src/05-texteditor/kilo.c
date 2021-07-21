@@ -266,12 +266,15 @@ void editorUpdateRow(erow *row) {
   row->rsize = idx;
 }
 
-void editorAppendRow(char *s, size_t len) {
+void editorInsertRow(int at, char *s, size_t len) {
+  if (at < 0 || at > E.numrows) return;
+
   //由于要新增一行字符串, 所以要把E.row数组扩大一个元素.
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+  //把第at行及以后的数据, 拷贝到at+1行, 留下第at行的空间, 用来新增一行
+  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
 
   //把新增的字符串加入到数组的末尾.
-  int at = E.numrows;
   E.row[at].size = len;
   //被数组中最后一个字符串申请内存
   E.row[at].chars = malloc(len + 1);
@@ -312,6 +315,24 @@ void editorRowInsertChar(erow *row, int at, int c) {
   editorUpdateRow(row);
 }
 
+void editorInsertNewLine() {
+  if (E.cx == 0) {
+    //如果是光标位于行头, 则在当前位置插入一行空的数据
+    editorInsertRow(E.cy, "", 0);
+  } else {
+    erow *row = &E.row[E.cy];
+    //如果是在行中间, 则以当前位置截断当前行.
+    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+    //插入之后, 更新当前行的数据.
+    row = &E.row[E.cy];
+    row->size = E.cx;
+    row->chars[row->size] = '\0';
+    editorUpdateRow(row);
+  }
+  E.cy++;
+  E.cx = 0;
+}
+
 void editorRowDelChar(erow *row, int at) {
   if (at < 0 || at > row->size) return;
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
@@ -324,7 +345,7 @@ void editorRowDelChar(erow *row, int at) {
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) {
     //新增一行长度为0字符串
-    editorAppendRow("", 0);
+    editorInsertRow(E.numrows, "", 0);
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
@@ -400,7 +421,7 @@ void editorOpen(char *filename) {
     while (linelen > 0 &&
            (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
       linelen--;
-    editorAppendRow(line, linelen);
+    editorInsertRow(E.numrows, line, linelen);
   }
   free(line);
   fclose(fp);
@@ -654,7 +675,7 @@ void editorProcessKeypress() {
   int c = editorReadKey();
   switch (c) {
     case '\r':
-      /* TODO */
+      editorInsertNewLine();
       break;
     case CTRL_KEY('q'):
       if (E.dirty && quit_times > 0) {
