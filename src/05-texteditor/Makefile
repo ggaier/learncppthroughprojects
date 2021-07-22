@@ -3,5 +3,7 @@ kilo: kilo.c
 #-pedantic: Warn on language extensions.
 	$(CC) kilo.c -o kilo -Wall -Wextra -pedantic -std=c99
 
+buildTest: kilo clean
+
 clean:
 	rm -f kilo
