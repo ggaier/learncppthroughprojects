@@ -43,7 +43,16 @@ enum editorKey {
 
 enum editorHighlight { HL_NORMAL = 0, HL_NUMBER, HL_MATCH };
 
+#define HL_HIGHLIGHT_NUMBERS (1 << 0)
+
 /*** data ***/
+
+struct editorSyntax {
+  char *fileType;
+  char **filematch;
+  int flags;
+};
+
 typedef struct erow {
   int size;
   // render中字符串的长度.
@@ -70,10 +79,21 @@ struct editorConfig {
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
+  struct editorSyntax *syntax;
   struct termios orig_termios;
 };
 
 struct editorConfig E;
+
+/*** filetypes ***/
+
+char *C_HL_extensions[] = {".c", ".h", ".cpp", NULL};
+// HLDB for highlight data base
+struct editorSyntax HLDB[] = {
+    {"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS},
+};
+
+#define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
 /*** prototypes ***/
 // variadic funtion, 可变参数方法, va_start, va_arg, va_end, 来获取可变参数
@@ -243,6 +263,7 @@ int is_separator(int c) {
 void editorUpdateSyntax(erow *row) {
   row->hl = realloc(row->hl, row->rsize);
   memset(row->hl, HL_NORMAL, row->size);
+  if (E.syntax == NULL) return;
 
   int prev_sep = 1;
 
@@ -252,14 +273,16 @@ void editorUpdateSyntax(erow *row) {
 
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-    //用prev_sep来判断前一个字符是否是分隔符, 如果是, 则高亮, 或者
-    //前边的字符是高亮数字.
-    if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||
-        (c == '.' && prev_hl == HL_NUMBER)) {
-      row->hl[i] = HL_NUMBER;
-      i++;
-      prev_sep = 0;
-      continue;
+    if (E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
+      //用prev_sep来判断前一个字符是否是分隔符, 如果是, 则高亮, 或者
+      //前边的字符是高亮数字.
+      if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||
+          (c == '.' && prev_hl == HL_NUMBER)) {
+        row->hl[i] = HL_NUMBER;
+        i++;
+        prev_sep = 0;
+        continue;
+      }
     }
 
     prev_sep = is_separator(c);
@@ -275,6 +298,31 @@ int editorSyntaxToColor(int hl) {
       return 34;
     default:
       return 37;
+  }
+}
+
+void editorSelectSyntaxHighlight() {
+  E.syntax = NULL;
+  if (E.filename == NULL) return;
+
+  char *ext = strchr(E.filename, '.');
+
+  for (unsigned int j = 0; j < HLDB_ENTRIES; j++) {
+    struct editorSyntax *s = &HLDB[j];
+    unsigned int i = 0;
+    while (s->filematch[i]) {
+      int is_ext = (s->filematch[i][0] == '.');
+      if ((is_ext && ext && !strcmp(ext, s->filematch[i])) ||
+          (!is_ext && strstr(E.filename, s->filematch[i]))) {
+        E.syntax = s;
+        int filerow;
+        for (filerow = 0; filerow < E.numrows; filerow++) {
+          editorUpdateSyntax(&E.row[filerow]);
+        }
+        return;
+      }
+      i++;
+    }
   }
 }
 
@@ -473,6 +521,8 @@ void editorOpen(char const *filename) {
   // strdup(const char* s): 复制一份字符串, 并返回指针.
   E.filename = strdup(filename);
 
+  editorSelectSyntaxHighlight();
+
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
 
@@ -502,7 +552,7 @@ void editorSave() {
       editorSetStatusMessage("Save aborted");
       return;
     }
-    return;
+    editorSelectSyntaxHighlight();
   }
   int len;
   char *buf = editorRowsToString(&len);
@@ -732,7 +782,10 @@ void editorDrawStatusBar(struct abuf *ab) {
                      E.filename ? E.filename : "[No Name]", E.numrows,
                      E.dirty ? "(modified)" : "");
   //当前行数的格式化字符串.
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  int rlen =
+      snprintf(rstatus, sizeof(rstatus), "%s | %d/%d",
+               E.syntax ? E.syntax->fileType : "no ft", E.cy + 1, E.numrows);
+
   if (len > E.screencols) len = E.screencols;
   abAppend(ab, status, len);
 
@@ -978,6 +1031,7 @@ void initEditor() {
   E.filename = NULL;
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
+  E.syntax = NULL;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
   //绘制每一行文字的时候, 留下最后两行用来显示statusbar.
