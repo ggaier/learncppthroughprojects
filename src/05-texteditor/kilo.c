@@ -235,15 +235,35 @@ int getWindowSize(int *rows, int *columns) {
 
 /*** syntax highlighting ***/
 
+int is_separator(int c) {
+  // strchr 跟strstr是类似的, 用来定位一个char在字符串中的位置, 返回的是指针.
+  return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];\"", c) != NULL;
+}
+
 void editorUpdateSyntax(erow *row) {
   row->hl = realloc(row->hl, row->rsize);
   memset(row->hl, HL_NORMAL, row->size);
 
-  int i;
-  for (i = 0; i < row->size; i++) {
-    if (isdigit(row->render[i])) {
+  int prev_sep = 1;
+
+  int i = 0;
+  while (i < row->rsize) {
+    char c = row->render[i];
+
+    unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+    //用prev_sep来判断前一个字符是否是分隔符, 如果是, 则高亮, 或者
+    //前边的字符是高亮数字.
+    if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||
+        (c == '.' && prev_hl == HL_NUMBER)) {
       row->hl[i] = HL_NUMBER;
+      i++;
+      prev_sep = 0;
+      continue;
     }
+
+    prev_sep = is_separator(c);
+    i++;
   }
 }
 
@@ -448,7 +468,7 @@ char *editorRowsToString(int *buflen) {
   return buf;
 }
 
-void editorOpen(char *filename) {
+void editorOpen(char const *filename) {
   free(E.filename);
   // strdup(const char* s): 复制一份字符串, 并返回指针.
   E.filename = strdup(filename);
@@ -512,6 +532,7 @@ void editorFindCallback(char *query, int key) {
   // direction: 表示的是查找的方向, -1表示往前, 1表示往后.
   static int direction = 1;
 
+  //恢复搜索后的颜色, 就是要首先记录之前的状态.
   //搜索匹配到的行序号
   static int saved_hl_line;
   //搜索匹配到的行复制.
@@ -585,7 +606,7 @@ void editorFind() {
     E.cx = saved_cx;
     E.cy = saved_cy;
     E.coloff = saved_coloff;
-    E.rowoff = E.rowoff;
+    E.rowoff = saved_rowoff;
   }
 }
 
