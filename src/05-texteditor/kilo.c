@@ -41,7 +41,7 @@ enum editorKey {
   DEL_KEY
 };
 
-enum editorHighlight { HL_NORMAL = 0, HL_NUMBER };
+enum editorHighlight { HL_NORMAL = 0, HL_NUMBER, HL_MATCH };
 
 /*** data ***/
 typedef struct erow {
@@ -51,6 +51,7 @@ typedef struct erow {
   char *chars;
   //实际上要绘制的一行文字.
   char *render;
+  // hl指针为文字的颜色标识
   unsigned char *hl;
 } erow;
 
@@ -250,6 +251,8 @@ int editorSyntaxToColor(int hl) {
   switch (hl) {
     case HL_NUMBER:
       return 31;
+    case HL_MATCH:
+      return 34;
     default:
       return 37;
   }
@@ -509,6 +512,17 @@ void editorFindCallback(char *query, int key) {
   // direction: 表示的是查找的方向, -1表示往前, 1表示往后.
   static int direction = 1;
 
+  //搜索匹配到的行序号
+  static int saved_hl_line;
+  //搜索匹配到的行复制.
+  static char *saved_hl = NULL;
+
+  if (saved_hl) {
+    memcpy(E.row[saved_hl_line].hl, saved_hl, E.row[saved_hl_line].rsize);
+    free(saved_hl);
+    saved_hl = NULL;
+  }
+
   if (key == '\r' || key == '\x1b') {
     last_match = -1;
     direction = 1;
@@ -535,14 +549,22 @@ void editorFindCallback(char *query, int key) {
     else if (current == E.numrows)
       current = 0;
     erow *row = &E.row[current];
-    //根据第二个参数, 返回在第一个参数中的位置. 或者一个NULL.
+    //根据第二个参数, 返回在第一个参数中的指针. 或者一个NULL.
     char *match = strstr(row->render, query);
     //查找并不完善, 只是找出了第一个.
     if (match) {
       last_match = current;
       E.cy = current;
+      //由于match是匹配文字在row->render中的指针, 所以index应该是二者相减.
       E.cx = editorRowRxToCx(row, match - row->render);
       E.rowoff = E.numrows;
+
+      saved_hl_line = current;
+      saved_hl = malloc(row->rsize);
+      memcpy(saved_hl, row->hl, row->rsize);
+
+      // match - row->render: 在匹配的index位置, 设置颜色为HL_MATCH
+      memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
       break;
     }
   }
