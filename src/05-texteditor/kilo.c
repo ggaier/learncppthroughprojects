@@ -248,7 +248,7 @@ void editorUpdateSyntax(erow *row) {
 
 int editorSyntaxToColor(int hl) {
   switch (hl) {
-    case HL_NORMAL:
+    case HL_NUMBER:
       return 31;
     default:
       return 37;
@@ -647,17 +647,25 @@ void editorDrawRows(struct abuf *ab) {
       if (len > E.screencols) len = E.screencols;
       char *c = &E.row[filerow].render[E.coloff];
       unsigned char *hl = &E.row[filerow].hl[E.coloff];
+      int current_color = -1;
       int j;
       for (j = 0; j < len; j++) {
         //如果是正常的颜色, 就使用39恢复
         if (hl[j] == HL_NORMAL) {
-          abAppend(ab, "\x1b[39m", 5);
+          if (current_color != -1) {
+            abAppend(ab, "\x1b[39m", 5);
+            current_color = -1;
+          }
           abAppend(ab, &c[j], 1);
         } else {
           int color = editorSyntaxToColor(hl[j]);
-          char buf[16];
-          int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
-          abAppend(ab, buf, clen);
+          //只有当颜色发生变化的时候, 才修改颜色, 否则颜色就保持一致.
+          if (color != current_color) {
+            current_color = color;
+            char buf[16];
+            int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+            abAppend(ab, buf, clen);
+          }
           abAppend(ab, &c[j], 1);
         }
       }
