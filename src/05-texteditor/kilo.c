@@ -45,6 +45,7 @@ enum editorKey {
 enum editorHighlight {
   HL_NORMAL = 0,
   HL_COMMENT,
+  HL_MLCOMMENT,
   HL_KEYWORD1,
   HL_KEYWORD2,
   HL_STRING,
@@ -62,10 +63,13 @@ struct editorSyntax {
   char **filematch;
   char **keywords;
   char *singleline_comment_start;
+  char *multiline_comment_start;
+  char *multiline_comment_end;
   int flags;
 };
 
 typedef struct erow {
+  int idx;
   int size;
   // render中字符串的长度.
   int rsize;
@@ -74,6 +78,7 @@ typedef struct erow {
   char *render;
   // hl指针为文字的颜色标识
   unsigned char *hl;
+  int hl_open_comment;
 } erow;
 
 struct editorConfig {
@@ -122,7 +127,7 @@ char *C_HL_keywords[] = {"switch",    "if",      "while",   "for",    "break",
                          "unsigned|", "signed|", "void|",   NULL};
 // HLDB for highlight data base
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, C_HL_keywords, "//",
+    {"c", C_HL_extensions, C_HL_keywords, "//", "/*", "*/",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
 };
 
@@ -301,21 +306,53 @@ void editorUpdateSyntax(erow *row) {
   char **keywords = E.syntax->keywords;
 
   char *scs = E.syntax->singleline_comment_start;
+  char *mcs = E.syntax->multiline_comment_start;
+  char *mce = E.syntax->multiline_comment_end;
+
   int scs_len = scs ? strlen(scs) : 0;
+  int mcs_len = scs ? strlen(mcs) : 0;
+  int mce_len = scs ? strlen(mce) : 0;
 
   int prev_sep = 1;
   int in_string = 0;
+  //判断当前行是否在多行注释的中间
+  int in_comment = (row->idx > 0 && E.row[row->idx - 1].hl_open_comment);
 
   int i = 0;
   while (i < row->rsize) {
     char c = row->render[i];
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-    if (scs_len && !in_string) {
+    //单行注释时, 还要判断一下是否是在多行注释中插入了单行注释.
+    if (scs_len && !in_string && !in_comment) {
       //在指定长度内, 对比两个字符串, 如果匹配则返回0
       if (!strncmp(&row->render[i], scs, scs_len)) {
         memset(&row->hl[i], HL_COMMENT, row->rsize - i);
         break;
+      }
+    }
+
+    if (mcs_len && mce_len && !in_string) {
+      if (in_comment) {
+        row->hl[i] = HL_COMMENT;
+        //如果匹配到多行注释的结束, 就认为多行注释到此结束.
+        //注意: strncmp()是和compare方法一致, 如果双方相等的时候, 会返回0.
+        if (!strncmp(&row->render[i], mce, mce_len)) {
+          memset(&row->hl[i], HL_MLCOMMENT, mce_len);
+          i += mce_len;
+          in_comment = 0;
+          prev_sep = 1;
+          continue;
+        } else {
+          i++;
+          continue;
+        }
+      } else if (!strncmp(&row->render[i], mcs, mcs_len)) {
+        //如果匹配到多行注释的开头, 就认为是在coment之中.
+        memset(&row->hl[i], HL_MLCOMMENT, mcs_len);
+        i += mcs_len;
+        in_comment = 1;
+        continue;
       }
     }
 
@@ -376,6 +413,14 @@ void editorUpdateSyntax(erow *row) {
     prev_sep = is_separator(c);
     i++;
   }
+  //检测完当前行是否属于多行注释
+  int changed = (row->hl_open_comment != in_comment);
+  //然后把当前行的多行注释标志设置成新的值.
+  row->hl_open_comment = in_comment;
+  //如果不是当前多行注释的结尾, 则更新下一行.
+  if (changed && row->idx + 1 < E.numrows) {
+    editorUpdateSyntax(&E.row[row->idx + 1]);
+  }
 }
 
 int editorSyntaxToColor(int hl) {
@@ -384,6 +429,7 @@ int editorSyntaxToColor(int hl) {
       return 32;
     case HL_KEYWORD2:
       return 33;
+    case HL_MLCOMMENT:
     case HL_COMMENT:
       return 36;
     case HL_STRING:
@@ -485,6 +531,11 @@ void editorInsertRow(int at, char *s, size_t len) {
   //把第at行及以后的数据, 拷贝到at+1行, 留下第at行的空间, 用来新增一行
   memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
 
+  //更新一下其他发生改变的row中的idx.
+  for (int j = at + 1; j <= E.numrows; j++) E.row[j].idx++;
+
+  E.row[at].idx = at;
+
   //把新增的字符串加入到数组的末尾.
   E.row[at].size = len;
   //被数组中最后一个字符串申请内存
@@ -497,6 +548,7 @@ void editorInsertRow(int at, char *s, size_t len) {
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
   E.row[at].hl = NULL;
+  E.row[at].hl_open_comment = 0;
   editorUpdateRow(&E.row[at]);
   E.numrows++;
   E.dirty++;
@@ -512,6 +564,10 @@ void editorDelRow(int at) {
   if (at < 0 || at >= E.numrows) return;
   editorFreeRow(&E.row[at]);
   memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+
+  //改行文字被删除, 所以应该也同时更新之后的row的idx.
+  for (int j = at; j < E.numrows; j++) E.row[j].idx--;
+
   E.numrows--;
   E.dirty++;
 }
@@ -842,8 +898,8 @@ void editorDrawRows(struct abuf *ab) {
       int j;
       for (j = 0; j < len; j++) {
         if (iscntrl(c[j])) {
-          //处理non-printable 字符. 如果是控制字符, 就转化成@以及其后ABCD这样的字符, 或者是?
-          //如果不在前26位的话.
+          //处理non-printable 字符. 如果是控制字符,
+          //就转化成@以及其后ABCD这样的字符, 或者是? 如果不在前26位的话.
           char sym = (c[j] <= 26 ? '@' + c[j] : '?');
           abAppend(ab, "\x1b[7m", 4);
           abAppend(ab, &sym, 1);
