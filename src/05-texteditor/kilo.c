@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -15,7 +16,6 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include <execinfo.h> 
 
 /*** defines ***/
 #define KILO_VERSION "0.0.1"
@@ -841,8 +841,22 @@ void editorDrawRows(struct abuf *ab) {
       int current_color = -1;
       int j;
       for (j = 0; j < len; j++) {
-        //如果是正常的颜色, 就使用39恢复
-        if (hl[j] == HL_NORMAL) {
+        if (iscntrl(c[j])) {
+          //处理non-printable 字符. 如果是控制字符, 就转化成@以及其后ABCD这样的字符, 或者是?
+          //如果不在前26位的话.
+          char sym = (c[j] <= 26 ? '@' + c[j] : '?');
+          abAppend(ab, "\x1b[7m", 4);
+          abAppend(ab, &sym, 1);
+          abAppend(ab, "\x1b[m", 3);
+
+          if (current_color != -1) {
+            char buf[16];
+            int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", current_color);
+            abAppend(ab, buf, clen);
+          }
+        } else
+            //如果是正常的颜色, 就使用39恢复
+            if (hl[j] == HL_NORMAL) {
           if (current_color != -1) {
             abAppend(ab, "\x1b[39m", 5);
             current_color = -1;
