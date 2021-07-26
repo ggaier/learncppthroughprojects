@@ -15,6 +15,7 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <execinfo.h> 
 
 /*** defines ***/
 #define KILO_VERSION "0.0.1"
@@ -95,6 +96,20 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+/*** error handler ***/
+void handler(int sig) {
+  void *array[10];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 10);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
 
 /*** filetypes ***/
 
@@ -294,7 +309,6 @@ void editorUpdateSyntax(erow *row) {
   int i = 0;
   while (i < row->rsize) {
     char c = row->render[i];
-
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
     if (scs_len && !in_string) {
@@ -343,7 +357,7 @@ void editorUpdateSyntax(erow *row) {
       int j;
       for (j = 0; keywords[j]; j++) {
         int klen = strlen(keywords[j]);
-        int kw2 = keywords[j][klen - 1] = '|';
+        int kw2 = keywords[j][klen - 1] == '|';
         if (kw2) klen--;
 
         //如果匹配到关键字, 并且后边是分割服, 则高亮.
@@ -387,7 +401,8 @@ void editorSelectSyntaxHighlight() {
   E.syntax = NULL;
   if (E.filename == NULL) return;
 
-  char *ext = strchr(E.filename, '.');
+  //从字符串中查找并定位最后一次出现某字符的位置.
+  char *ext = strrchr(E.filename, '.');
 
   for (unsigned int j = 0; j < HLDB_ENTRIES; j++) {
     struct editorSyntax *s = &HLDB[j];
@@ -397,6 +412,7 @@ void editorSelectSyntaxHighlight() {
       if ((is_ext && ext && !strcmp(ext, s->filematch[i])) ||
           (!is_ext && strstr(E.filename, s->filematch[i]))) {
         E.syntax = s;
+
         int filerow;
         for (filerow = 0; filerow < E.numrows; filerow++) {
           editorUpdateSyntax(&E.row[filerow]);
@@ -1121,6 +1137,7 @@ void initEditor() {
 }
 
 int main(int argc, char const *argv[]) {
+  signal(SIGSEGV, handler);
   // terminal有两种不同的模式, 一种是cooked mode, 输入数据会被预先处理,
   // 然后再统一给应用程序. 也就是一次性给一行; 另外一种是raw mode,
   //用户输入什么数据, terminal就给应用什么样的数据.
@@ -1130,9 +1147,11 @@ int main(int argc, char const *argv[]) {
   // main方法解释: argc, argument count, 表示的是argc表示的是传递给程序的参数
   // argv是后边的实际参数. 其中第一个参数是程序本身.
   if (argc >= 2) {
+    printf("main editor open 1: %s", argv[1]);
     editorOpen(argv[1]);
   }
   editorSetStatusMessage("HELP: Ctrl-s = save | Ctrl-Q = quit | Ctrl-F = find");
+  printf("main editor open 2");
 
   while (1) {
     editorRefreshScreen();
