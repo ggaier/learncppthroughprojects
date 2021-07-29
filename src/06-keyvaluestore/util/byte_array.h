@@ -19,6 +19,16 @@ class ByteArrayResource {
   virtual const uint64_t size_compressed_const() = 0;
 };
 
+// class MmappedByteArrayResource : public ByteArrayResource {
+//   friend class ByteArray;
+
+//  private:
+//   char* data_;
+//   uint64_t size_;
+//   uint64_t size_compressed_;
+//   Mmap mmap_;
+// }
+
 class AllocatedByteArrayResource : public ByteArrayResource {
   friend class ByteArray;
 
@@ -89,9 +99,79 @@ class ByteArray {
         checksum_initial_(0) {}
 
   virtual ~ByteArray() {}
-  //TODO
+
+  virtual char* data() { return resource_->data() + offset_; }
+  virtual const char* data_const() { return resource_->data_const() + offset_; }
+  virtual uint64_t size() { return size_; }
+  virtual const uint64_t size_const() const { return size_; }
+
+  //不建议使用using 指令.
+  virtual std::string ToString() { return std::string(data(), size()); }
+
+  static ByteArray NewShallowCopyByteArray(char* data, uint64_t size) {
+    ByteArray byte_array;
+    //所谓潜拷贝, 只是拷贝了指针
+    byte_array.resource_ =
+        std::make_shared<AllocatedByteArrayResource>(data, size, false);
+    byte_array.size = size;
+    return byte_array;
+  }
+
+  static ByteArray NewDeepCopyByteArray(const char* data, u_int64_t size) {
+    ByteArray byte_array;
+    byte_array.resource_ =
+        std::make_shared<AllocatedByteArrayResource>(data, size, true);
+    byte_array.size = size;
+    //这里虽然会出现隐式拷贝, 但是resource_并不会调用拷贝构造函数,
+    //而是调用share_ptr的拷贝构造 而它只是增加了引用计数,
+    //以及一个新的指针指向该share_ptr所指向的对象. 也就是share_ptr不支持深拷贝.
+    return byte_array;
+  }
+
+  static ByteArray NewDeepCopyByteArray(cosnt std::string& str) {
+    // c_str(): 获取c_style的字符串.
+    // size(): 返回string的长度, 注意这里是字符串内容的实际长度,
+    // 而不是所占用的存储容量, 因为存储容量更大.
+    return NewDeepCopyByteArray(str.c_str(), str.size());
+  }
+
+  // static ByteArray NewMmappedByteArray(const std::string& filepath,
+  //                                      uint64_t filesize) {
+  //   ByteArray byte_array;
+  //   byte_array.resource_ = std::make_shared<>()
+  // }
+
+  static ByteArray NewPointerByteArray(const char* data, uint64_t size) {
+    ByteArray byte_array;
+    byte_array.resource_ =
+        std::make_shared<PointerByteArrayResource>(data, size);
+    byte_array.size = size;
+    return byte_array;
+  }
+
+  bool operator==(const ByteArray& right) const {
+    return (size_const() == right.size_const() &&
+            memcmp(data_const(), right.data_const(), size_const()) == 0)
+  }
 
  private:
+  static ByteArray NewEmptyByteArray() { return ByteArray(); }
+
+  static ByteArray NewReferenceByteArray(ByteArray& byte_array_in) {
+    // TODO
+    ByteArray byte_array = byte_array_in;
+    return byte_array;
+  }
+
+  static ByteArray NewAllocateMemoryByteArray(uint64_t size) {
+    ByteArray byte_array;
+    // make_shared申请并构造一个对象, 然后返回一个share_ptr对象, 这个返回的对象
+    //包含了刚才构造的对象的指针. 参数会被当做构造器的参数传给T的构造器.
+    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(size);
+    byte_array.size_ = size;
+    return byte_array;
+  }
+
   //用来管理指针所指向的内存
   std::shared_ptr<ByteArrayResource> resource_;
   uint64_t size_;
@@ -115,24 +195,20 @@ class ByteArray {
   virtual uint32_t checksum_initial() { return checksum_initial_; }
   virtual void set_checksum(uint32_t c) { checksum_ = c; }
   virtual void set_checksum_initial(uint32_t c) { checksum_initial_ = c; }
-
-  static ByteArray NewEmptyByteArray() { return ByteArray(); }
-
-  static ByteArray NewReferenceByteArray(ByteArray& byte_array_in) {
-    // TODO
-    ByteArray byte_array = byte_array_in;
-    return byte_array;
-  }
-
-  static ByteArray NewAllocateMemoryByteArray(uint64_t size) {
-    ByteArray byte_array;
-    // make_shared申请并构造一个对象, 然后返回一个share_ptr对象, 这个返回的对象
-    //包含了刚才构造的对象的指针. 参数会被当做构造器的参数传给T的构造器.
-    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(size);
-    byte_array.size_ = size;
-    return byte_array;
-  }
 };
+
+inline ByteArray NewShallowCopyByteArray(char* data, uint64_t size) {
+  return ByteArray::NewShallowCopyByteArray(data, size);
+}
+
+inline ByteArray NewDeepCopyByteArray(const char* data, uint64_t size) {
+  return ByteArray::NewDeepCopyByteArray(data, size);
+}
+
+inline ByteArray NewPointerByteArray(const char* data, uint64_t size) {
+  return ByteArray::NewPointerByteArray(data, size);
+}
+
 }  // namespace kdb
 
 #endif

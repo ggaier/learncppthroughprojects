@@ -2,6 +2,8 @@
 
 这是一个C++的项目. 教程地址[Implementing a Key Value Store](https://codecapsule.com/2012/11/07/ikvs-implementing-a-key-value-store-table-of-contents/)
 
+虽然这个项目中我又些不懂的东西, 但是先学习起来, 模仿是学习的第一步.
+
 ## 代码风格
 
 项目的代码风格使用了Google的[C++风格](https://google.github.io/styleguide/cppguide.html). 包括:
