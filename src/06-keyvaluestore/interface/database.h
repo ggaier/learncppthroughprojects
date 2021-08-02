@@ -15,7 +15,8 @@ class Database : public KingDB {
   Status PutPartValidSize(WriteOptions& write_options, ByteArray& key,
                           ByteArray& chunk, uint64_t offset_chunk,
                           uint64_t size_value);
-  kdb::Da
+  kdb::DatabaseOptions db_options_;
+  std::string dbname_;
 };
 
 }  // namespace kdb

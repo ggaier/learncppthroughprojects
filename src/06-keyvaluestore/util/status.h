@@ -34,6 +34,10 @@ class Status {
                                 const std::string& message2 = "") {
     return Status(kInvalidArgument, message1, message2);
   }
+  static Status IOError(const std::string& message1,
+                        const std::string& message2 = "") {
+    return Status(kIOError, message1, message2);
+  }
 
   //方法名应该是CamelCase的命名.
   bool IsOK() const { return code() == kOK; }

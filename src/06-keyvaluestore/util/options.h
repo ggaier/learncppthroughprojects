@@ -1,5 +1,8 @@
 #ifndef KINGDB_OPTIONS_H_
 #define KINGDB_OPTIONS_H_
+
+#include "util/config_parser.h"
+
 namespace kdb {
 
 enum HashType { kMurmurHash3_64 = 0x0, kxxHash_64 = 0x1 };
@@ -32,7 +35,7 @@ struct DatabaseOptions {
         checksum(kCRC32C),
         write_buffer__mode(kWriteBufferModeDirect) {
     DatabaseOptions& db_options = *this;
-
+    ConfigParser parser;
   }
   uint64_t internal__hstable_header_size;
   uint64_t internal__num_iterations_per_lock;
@@ -80,6 +83,11 @@ struct DatabaseOptions {
   }
 
   static std::string GetFilename() { return "db_options"; }
+
+  static void AddParameterToConfigParser(DatabaseOptions& db_options,
+                                         ConfigParser& parser) {
+    parser.AddParameter(new kdb::)
+  }
 };
 
 //这个struct封装了读取数据的参数
