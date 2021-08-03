@@ -1,6 +1,7 @@
 #ifndef KINGDB_CONIFG_PARSER_H_
 #define KINGDB_CONFIG_PARSER_H_
 
+#include <cinttypes>
 #include <map>
 #include <regex>
 #include <set>
@@ -150,10 +151,98 @@ class UnsignedInt32Parameter : public Parameter {
       return Status::IOError("ConfigParser", str_line_number);
     }
     uint64_t multiplier = GetMultiplier(value);
-    if(multiplier==0){
-      
+    if (multiplier == 0) {
+      std::string str_line_number = "Invalid unit for parameter [" + config +
+                                    "] in file [" + filepath + "] on line " +
+                                    std::to_string(line_number);
+      return Status::IOError("ConfigParser", str_line_number);
+    }
+    *ptr = *ptr * multiplier;
+    return Status::OK();
+  }
+
+  virtual std::string Type() { return "Unsigned 32-bit integer"; }
+};
+
+class UnsignedInt64Parameter : public Parameter {
+ public:
+  uint64_t* ptr;
+  UnsignedInt64Parameter(const std::string& name_in,
+                         const std::string& default_in, uint64_t* ptr_in,
+                         bool mandatory_in, const std::string& description_in) {
+    name = name_in;
+    is_mandatory = mandatory_in;
+    description = description_in;
+    default_value = default_in;
+    ptr = ptr_in;
+    Status s = Parse(name, default_in, "default_value", 0);
+    if (!s.IsOK()) {
+      fprintf(stderr, "Error: invalid default value for parameter [%s]\n",
+              name.c_str());
+      exit(1);
     }
   }
+
+  virtual ~UnsignedInt64Parameter() {}
+  virtual uint64_t Get() { return *ptr; }
+  virtual Status Parse(const std::string& config, const std::string& value,
+                       const std::string& filepath, int line_number) {
+    // read formatted data from string
+    //这里的意思是读取一个uint64_t的数据赋值给ptr, 同时返回成功填充数据的个数.
+    int num_scanned = sscanf(value.c_str(), "%" PRIu64, ptr);
+    if (num_scanned != 1) {
+      std::string str_line_number =
+          "invalid value for unsigned 64-bit integer parameter [" + config +
+          "] in file [" + filepath + "] on line " + std::to_string(line_number);
+      return Status::IOError("ConfigParser", str_line_number);
+    }
+    uint64_t multiplier = GetMultiplier(value);
+    if (multiplier == 0) {
+      std::string str_line_number = "Invalid unit for parameter [" + config +
+                                    "] in file [" + filepath + "] on line " +
+                                    std::to_string(line_number);
+      return Status::IOError("ConfigParser", str_line_number);
+    }
+    *ptr = *ptr * multiplier;
+    return Status::OK();
+  }
+
+  virtual std::string Type() { return "Unsigned 64-bit integer"; }
+};
+
+class DoubleParameter : public Parameter {
+ public:
+  double* ptr;
+  DoubleParameter(const std::string& name_in, const std::string& default_in,
+                  double* ptr_in, bool mandatory_in,
+                  const std::string& description_in) {
+    name = name_in;
+    is_mandatory = mandatory_in;
+    description = description_in;
+    default_value = default_in;
+    ptr = ptr_in;
+    Status s = Parse(name, default_in, "default-value", 0);
+    if (!s.IsOK()) {
+      fprintf(stderr, "Error: invalid default value for parameter [%s]\n",
+              name.c_str());
+      exit(1);
+    }
+  }
+  virtual ~DoubleParameter() {}
+  virtual double Get() { return *ptr; }
+  virtual Status Parse(const std::string& config, const std::string& value,
+                       const std::string& filepath, int line_number) {
+    int num_scanned = sscanf(value.c_str(), "%lf", ptr);
+    if (num_scanned != 1) {
+      std::string str_line_number =
+          "Invalid value for double-precision number parameter [" + config +
+          "] in file [" + filepath + "] on line " + std::to_string(line_number);
+      return Status::IOError("ConfigParser", str_line_number);
+    }
+    return Status::OK();
+  }
+
+  virtual std::string Type() { return "Double-precision number"; }
 };
 
 class ConfigParser {
