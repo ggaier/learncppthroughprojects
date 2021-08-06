@@ -235,7 +235,7 @@ class DoubleParameter : public Parameter {
     int num_scanned = sscanf(value.c_str(), "%lf", ptr);
     if (num_scanned != 1) {
       std::string str_line_number =
-          "Invalid value for double-precision number parameter [" + config +
+          "Invalid value for double-precision number paramete r [" + config +
           "] in file [" + filepath + "] on line " + std::to_string(line_number);
       return Status::IOError("ConfigParser", str_line_number);
     }
@@ -243,6 +243,30 @@ class DoubleParameter : public Parameter {
   }
 
   virtual std::string Type() { return "Double-precision number"; }
+};
+
+class StringParameter : public Parameter {
+ public:
+  std::string* ptr;
+  StringParameter(const std::string& name_in, const std::string& default_in,
+                  std::string* ptr_in, bool mandatory_in,
+                  const std::string& description_in) {
+    name = name_in;
+    is_mandatory = mandatory_in;
+    description = description_in;
+    default_value = default_in;
+    ptr = ptr_in;
+    *ptr = default_in;
+  }
+
+  virtual ~StringParameter() {}
+  virtual std::string Get() { return *ptr; }
+  virtual Status Parse(const std::string& config, const std::string& value,
+                       const std::string& filepath, int line_number) {
+    *ptr = value;
+    return Status::OK();
+  }
+  virtual std::string Type() { return "String"; }
 };
 
 class ConfigParser {
@@ -348,7 +372,7 @@ class ConfigParser {
     }
   }
 
-  Status LoadDefaultValue() { return ParseCommandLine(0, nullptr); }
+  Status LoadDefaultValues() { return ParseCommandLine(0, nullptr); }
 
   Status ParseCommandLine(int argc, char** argv) {
     std::map<std::string, Parameter*> parameters;
