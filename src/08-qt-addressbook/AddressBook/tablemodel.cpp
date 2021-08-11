@@ -1,5 +1,7 @@
 #include "tablemodel.h"
 
+//在方法中要尽量限制new关键字的使用. 在生命周期更长的情况的时候,
+//或者申请内存过大的时候才考虑.
 TableModel::TableModel(QObject* parent)
     : QAbstractTableModel(parent)
 {
@@ -63,46 +65,55 @@ bool TableModel::insertRows(int position, int rows, const QModelIndex& index)
 {
     Q_UNUSED(index);
     beginInsertRows(QModelIndex(), position, position + rows - 1);
-    for(int row = 0; row < rows; ++row){
+    for (int row = 0; row < rows; ++row) {
         contacts.insert(position, { QString(), QString() });
     }
     endInsertRows();
     return true;
 }
 
-bool TableModel::removeRows(int position, int rows, const QModelIndex &index)
+bool TableModel::removeRows(int position, int rows, const QModelIndex& index)
 {
     Q_UNUSED(index);
-    beginRemoveRows(QModelIndex(), position, position+rows-1);
-    for(int row = 0; row < rows; ++row){
+    beginRemoveRows(QModelIndex(), position, position + rows - 1);
+    for (int row = 0; row < rows; ++row) {
         contacts.removeAt(position);
     }
     endRemoveRows();
     return true;
 }
 
-bool TableModel::setData(const QModelIndex &index, const QVariant &value, int role)
+bool TableModel::setData(const QModelIndex& index, const QVariant& value, int role)
 {
-    if(index.isValid() && role == Qt::DisplayRole){
-
+    if (index.isValid() && role == Qt::DisplayRole) {
+        const int row = index.row();
+        auto contact = contacts.value(row);
+        switch (index.column()) {
+        case 0:
+            contact.name = value.toString();
+            break;
+        case 1:
+            contact.address = value.toString();
+            break;
+        default:
+            return false;
+        }
+        contacts.replace(row, contact);
+        emit dataChanged(index, index, { Qt::DisplayRole, Qt::EditRole });
+        return true;
     }
+    return false;
 }
 
+Qt::ItemFlags TableModel::flags(const QModelIndex& index) const
+{
+    if (!index.isValid())
+        return Qt::ItemIsEnabled;
 
+    return QAbstractTableModel::flags(index) | Qt::ItemIsEditable;
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+const QVector<Contact>& TableModel::getContacts() const
+{
+    return contacts;
+}
