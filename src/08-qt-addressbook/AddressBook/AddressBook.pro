@@ -12,11 +12,13 @@ SOURCES += \
     addresswidget.cpp \
     main.cpp \
     addressbook.cpp \
+    newaddresstab.cpp \
     tablemodel.cpp
 
 HEADERS += \
     addressbook.h \
     addresswidget.h \
+    newaddresstab.h \
     tablemodel.h
 
 # Default rules for deployment.

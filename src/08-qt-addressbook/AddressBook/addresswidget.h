@@ -1,6 +1,7 @@
 #ifndef ADDRESSWIDGET_H
 #define ADDRESSWIDGET_H
 
+#include "newaddresstab.h"
 #include "tablemodel.h"
 
 #include <QItemSelection>
@@ -26,7 +27,7 @@ private:
     void setupTabs();
 
     TableModel* table;
-    //NewAddressTab* newAddressTab;
+    NewAddressTab* newAddressTab;
 };
 
 #endif // ADDRESSWIDGET_H
