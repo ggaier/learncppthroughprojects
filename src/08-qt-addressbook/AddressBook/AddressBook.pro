@@ -12,14 +12,14 @@ SOURCES += \
     adddialog.cpp \
     addresswidget.cpp \
     main.cpp \
-    addressbook.cpp \
+    mainwindow.cpp \
     newaddresstab.cpp \
     tablemodel.cpp
 
 HEADERS += \
     adddialog.h \
-    addressbook.h \
     addresswidget.h \
+    mainwindow.h \
     newaddresstab.h \
     tablemodel.h
 
