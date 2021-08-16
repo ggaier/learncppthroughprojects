@@ -2,7 +2,7 @@
 
 #include <QAction>
 #include <QMenuBar>
-
+#include <QFileDialog>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -33,3 +33,58 @@ void MainWindow::createMenus()
 
     connect(addressWidget, &AddressWidget::selectionChanged, this, &MainWindow::updateActions);
 }
+
+
+void MainWindow::openFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this);
+    if(!fileName.isEmpty()){
+        addressWidget->readFromFile(fileName);
+    }
+}
+
+
+void MainWindow::saveFile()
+{
+    QString fileName = QFileDialog::getSaveFileName(this);
+    if(!fileName.isEmpty()){
+        addressWidget->writeToFile(fileName);
+    }
+}
+
+void MainWindow::updateActions(const QItemSelection & selection)
+{
+    QModelIndexList indexes = selection.indexes();
+    if(!indexes.isEmpty()){
+        removeAct->setEnabled(true);
+        editAct->setEnabled(true);
+    } else {
+        removeAct->setEnabled(false);
+        editAct->setEnabled(false);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
