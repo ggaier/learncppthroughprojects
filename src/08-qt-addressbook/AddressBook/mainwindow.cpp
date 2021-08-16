@@ -4,7 +4,8 @@
 #include <QMenuBar>
 #include <QFileDialog>
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
+MainWindow::MainWindow() : QMainWindow(),
+      addressWidget(new AddressWidget)
 {
     setCentralWidget(addressWidget);
     createMenus();
@@ -20,6 +21,13 @@ void MainWindow::createMenus()
     connect(openAct, &QAction::triggered, this, &MainWindow::openFile);
 
     QMenu* toolMenu = menuBar()->addMenu(tr("&Tools"));
+
+    QAction* addAct = new QAction("&Add Entry", this);
+    addAct->setEnabled(true);
+    toolMenu->addAction(addAct);
+    connect(addAct, &QAction::triggered, addressWidget, &AddressWidget::showAddEntryDialog);
+
+
     editAct = new QAction(tr("&Edit Entry..."), this);
     editAct->setEnabled(false);
     toolMenu->addAction(editAct);

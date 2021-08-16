@@ -8,7 +8,7 @@ class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
-    MainWindow(QWidget *parent = nullptr);
+    MainWindow();
 
     //slots的方法可以被任意的Component调用, 无论这个方法是什么
     //访问层级

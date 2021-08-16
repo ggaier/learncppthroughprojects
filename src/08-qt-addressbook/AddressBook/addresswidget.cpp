@@ -57,6 +57,21 @@ void AddressWidget::showAddEntryDialog()
     }
 }
 
+void AddressWidget::addEntry(const QString& name, const QString& address)
+{
+    if(!table->getContacts().contains({name, address})){
+        table->insertRows(0, 1, QModelIndex());
+
+        QModelIndex index = table->index(0, 0, QModelIndex());
+        table->setData(index, name, Qt::EditRole);
+        index = table->index(0, 1, QModelIndex());
+        table->setData(index, address, Qt::EditRole);
+        removeTab((indexOf(newAddressTab)));
+    } else {
+        QMessageBox::information(this, tr("Duplicate Nmae"), tr("The name \"%1\" already exists").arg(name));
+    }
+}
+
 void AddressWidget::editEntry()
 {
     QTableView* tmp = static_cast<QTableView*>(currentWidget());
