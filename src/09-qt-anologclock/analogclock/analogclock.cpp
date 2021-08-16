@@ -3,6 +3,8 @@
 #include <QPainter>
 #include <QTime>
 #include <QTimer>
+#include <QDebug>
+#include <stdio.h>
 
 AnalogClock::AnalogClock(QWidget* parent)
     : QWidget(parent)
@@ -18,8 +20,12 @@ AnalogClock::AnalogClock(QWidget* parent)
     resize(200, 200);
 }
 
-void AnalogClock::paintEvent(QPaintEvent* event)
+void AnalogClock::paintEvent(QPaintEvent*)
 {
+    //stdout是line buffer, 所以只有到遇到一个新的换行符时, 才会显示到console上.
+    //因此如果想要快速的打印出结果可以输出到stderr中
+    //或者是flush stdout使用fflush(stdout);
+    fprintf(stderr, "AnalogClock::paintEvnet");
     //时针的三角形
     static const QPoint hourHand[3] = {
         QPoint(7, 8),
