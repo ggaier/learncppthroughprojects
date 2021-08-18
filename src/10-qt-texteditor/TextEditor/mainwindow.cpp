@@ -2,6 +2,7 @@
 //如果在header file中include <QtWidgets>, 会造成性能问题
 //但是使用class forward declaration则不会有这个问题.
 #include <QtWidgets>
+#include <QtDebug>
 
 MainWindow::MainWindow()
     : textEdit(new QPlainTextEdit)
@@ -57,6 +58,7 @@ void MainWindow::open()
 
 bool MainWindow::save()
 {
+    qInfo() << "current file name: " << curFile;
     if (curFile.isEmpty()) {
         return saveAs();
     } else {
@@ -68,12 +70,15 @@ bool MainWindow::saveAs()
 {
     //一个弹框, 用来选择文件或者目录.
     QFileDialog dialog(this);
-    dialog.setWindowModality(Qt::WindowModal);
     dialog.setAcceptMode(QFileDialog::AcceptSave);
-    if (dialog.exec() != QDialog::Accepted) {
+
+    const int exec = dialog.exec();
+    if (exec != QDialog::Accepted) {
+        qInfo() << "save as not accepted ";
         return false;
     }
-    return saveFile(dialog.selectedFiles().first());
+    const QString fileName = dialog.selectedFiles().constFirst();
+    return saveFile(fileName);
 }
 
 void MainWindow::about()
@@ -225,14 +230,14 @@ bool MainWindow::maybeSave()
     return true;
 }
 
-void MainWindow::loadFile(const QString &fileName)
+void MainWindow::loadFile(const QString& fileName)
 {
     QFile file(fileName);
-    if (!file.open(QFile::ReadOnly|QFile::Text)) {
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
         QMessageBox::warning(this, tr("Application"),
-                             tr("Cannot read file %1:\n%2.")
-                                 .arg(QDir::toNativeSeparators(fileName),
-                                      file.errorString()));
+            tr("Cannot read file %1:\n%2.")
+                .arg(QDir::toNativeSeparators(fileName),
+                    file.errorString()));
         return;
     }
 
@@ -249,26 +254,24 @@ void MainWindow::loadFile(const QString &fileName)
     statusBar()->showMessage(tr("File loaded"), 2000);
 }
 
-
-bool MainWindow::saveFile(const QString &fileName)
+bool MainWindow::saveFile(const QString& fileName)
 {
     QString errorMessage;
-
+    qInfo() << "save file name " << fileName;
     QGuiApplication::setOverrideCursor(Qt::WaitCursor);
     QSaveFile file(fileName);
-    if (file.open(QFile::WriteOnly | QFile::Text)){
+    if (file.open(QFile::WriteOnly | QFile::Text)) {
         QTextStream out(&file);
         out << textEdit->toPlainText();
-        if(!file.commit()){
+        if (!file.commit()) {
             errorMessage = tr("Cannot write file %1:\n%2")
                                .arg(QDir::toNativeSeparators(fileName),
-                                    file.errorString());
+                                   file.errorString());
         }
     } else {
         errorMessage = tr("Cannot open file %1 for writting:\n%2.")
                            .arg(QDir::toNativeSeparators(fileName),
-                                file.errorString());
-
+                               file.errorString());
     }
     QGuiApplication::restoreOverrideCursor();
 
@@ -282,7 +285,7 @@ bool MainWindow::saveFile(const QString &fileName)
     return true;
 }
 
-void MainWindow::setCurrentFile(const QString &fileName)
+void MainWindow::setCurrentFile(const QString& fileName)
 {
     curFile = fileName;
     textEdit->document()->setModified(true);
@@ -294,22 +297,23 @@ void MainWindow::setCurrentFile(const QString &fileName)
     setWindowFilePath(showName);
 }
 
-QString MainWindow::strippedName(const QString &fullFileName)
+QString MainWindow::strippedName(const QString& fullFileName)
 {
     return QFileInfo(fullFileName).fileName();
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#ifndef QT_NO_SESSIONMANAGER
+//sessionManager 是用来在关机的时候, 保存session的. 然后在启动的时候,
+//会重新恢复这个session. 当触发的时候, 会有两个signals, 分别是
+//QGUiApplication::commitDataRequest() 和 QGuiApplication::saveStateRequest()
+void MainWindow::commitData(QSessionManager& manager)
+{
+    if (manager.allowsInteraction()) {
+        if (!maybeSave())
+            manager.cancel();
+    } else {
+        if (textEdit->document()->isModified())
+            save();
+    }
+}
+#endif
